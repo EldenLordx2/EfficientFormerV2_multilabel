@@ -7,6 +7,7 @@ import math
 import sys
 from typing import Iterable, Optional
 
+import os
 import torch
 
 from timm.data import Mixup
@@ -124,7 +125,6 @@ def evaluate(data_loader, model, device):
 
     metric_logger.synchronize_between_processes()
 
-    # ---- 下面开始算全量指标（需要把所有 batch 拼起来）----
     probs = torch.cat(all_probs, dim=0)      # [N, C]
     targets = torch.cat(all_targets, dim=0)  # [N, C]
 
@@ -137,7 +137,7 @@ def evaluate(data_loader, model, device):
     aps = torch.stack(aps)  # [C]
     mAP = torch.nanmean(aps).item()
 
-    # 2) 选阈值：在验证集上扫一遍，最大化 micro-F1（你也可以改成 macro-F1）
+    # 2) choose threshold：maximum micro-F1（or you can choose macro-F1）
     thresholds = torch.linspace(0.05, 0.95, steps=19, device=probs.device)
 
     best = {"thr": 0.5, "micro_f1": -1, "micro_p": 0, "micro_r": 0, "macro_f1": -1}
@@ -172,7 +172,6 @@ def evaluate(data_loader, model, device):
                 "macro_f1": float(macro_f1),
             })
 
-    # 输出
     loss_avg = metric_logger.loss.global_avg if "loss" in metric_logger.meters else float("nan")
     print(
         f"* loss {loss_avg:.4f} | mAP {mAP:.4f} | "
@@ -191,21 +190,18 @@ def evaluate(data_loader, model, device):
         "macro_f1": best["macro_f1"],
     }
 
-# engine.py 末尾新增
-import os
-
 @torch.no_grad()
 def predict_txt_images(data_loader, model, device, label_txt, out_vec_path, out_label_path, thr=0.5):
     model.eval()
 
-    # 读 label 名
+    # read label
     labels = []
     with open(label_txt, 'r', encoding='utf-8') as f:
         for line in f:
             s = line.strip()
             if not s:
                 continue
-            # 允许 "0 正常" 这种：取第2列及之后作为名字；没有则取第1列
+            # Allow "0 normal": Take the second column and beyond as names; if not, take the first column.
             parts = s.split()
             if len(parts) >= 2:
                 name = " ".join(parts[1:])
@@ -230,7 +226,7 @@ def predict_txt_images(data_loader, model, device, label_txt, out_vec_path, out_
         probs = torch.sigmoid(output)  # [B, C]
         preds = (probs >= thr).int().cpu().numpy()  # 0/1
 
-        # DataLoader 默认 collate 会把 path list 成 list[str]
+        # The default collate of DataLoader will turn a list of paths into a list of strings.
         for p, vec in zip(paths, preds):
             vec_str = ",".join(str(int(x)) for x in vec.tolist())
             fvec.write(f"{p} {vec_str}\n")

@@ -4,7 +4,7 @@ import os
 import json
 
 from torchvision import datasets, transforms
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from torchvision.datasets.folder import ImageFolder, default_loader
 import torch
 import warnings
@@ -62,12 +62,12 @@ class TxtMultiLabelDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         n = len(self.samples)
 
-        # 最多尝试 n 次，避免极端情况下全是坏图导致死循环
+        # retrying for unusable image
         for k in range(n):
             j = (idx + k) % n
             img_path, vec = self.samples[j]
 
-            # 跳过 0 字节
+            # skip the valid image
             try:
                 if os.path.getsize(img_path) == 0:
                     warnings.warn(f"Skip empty image: {img_path}")
@@ -76,7 +76,6 @@ class TxtMultiLabelDataset(torch.utils.data.Dataset):
                 warnings.warn(f"Skip unreadable path: {img_path} ({e})")
                 continue
 
-            # 尝试读图
             try:
                 with Image.open(img_path) as im:
                     if im.mode == "P":
@@ -90,7 +89,6 @@ class TxtMultiLabelDataset(torch.utils.data.Dataset):
             if self.transform is not None:
                 img = self.transform(img)
 
-            # target 永远是 tensor
             target = torch.tensor(vec, dtype=torch.float32)
             return img, target
 
@@ -165,7 +163,7 @@ def build_dataset(is_train, args):
         dataset = INatDataset(args.data_path, train=is_train, year=2019,
                               category=args.inat_category, transform=transform)
         nb_classes = dataset.nb_classes
-    # datasets.py 里 build_dataset 的 TXT 分支替换为下面这样
+    # New TXT processing method
     elif args.data_set == 'TXT':
         nb_classes = None
         if getattr(args, 'label_txt', ''):
@@ -173,16 +171,15 @@ def build_dataset(is_train, args):
                 nb_classes = sum(1 for _ in lf if _.strip())
 
         if getattr(args, 'predict_only', False):
-            # 推理：只读图片路径
+            # inference：only read picture path
             if not args.val_txt:
                 raise ValueError("predict_only requires --val-txt to be set")
             dataset = TxtImageOnlyDataset(args.val_txt, transform=transform)
-            # 推理也需要 nb_classes 用于输出向量长度（来自 label.txt）
             if nb_classes is None:
                 raise ValueError("predict_only requires --label-txt to infer num classes")
             return dataset, nb_classes
 
-        # 训练/验证：仍然走你的多标签 0/1 向量
+        # train/eval：multilabel 0/1 vector
         list_path = args.train_txt if is_train else (args.val_txt or args.train_txt)
         dataset = TxtMultiLabelDataset(list_path, transform=transform, num_classes=nb_classes)
         nb_classes = dataset.nb_classes
@@ -227,12 +224,7 @@ def build_transform(is_train, args):
     t.append(transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD))
     return transforms.Compose(t)
 
-# datasets.py 里新增（或放在 TxtMultiLabelDataset 下面）
-import os
-import warnings
-import torch
-from PIL import Image, UnidentifiedImageError
-
+#New class for prediction
 class TxtImageOnlyDataset(torch.utils.data.Dataset):
     """
     Inference dataset from a txt file.
@@ -285,8 +277,7 @@ class TxtImageOnlyDataset(torch.utils.data.Dataset):
             if self.transform is not None:
                 img = self.transform(img)
 
-            # 返回 img + 路径（推理要用）
+            # return img + path
             return img, img_path
 
-        # 全部坏图兜底
         raise RuntimeError(f"All images are unreadable around idx={idx}")

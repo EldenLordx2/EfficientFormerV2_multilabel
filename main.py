@@ -175,6 +175,7 @@ def get_args_parser():
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
 
+    #addtional TXT training parameters
     parser.add_argument('--train-txt', default='train.txt', type=str,
                     help='Path to train list txt for data-set=TXT')
     parser.add_argument('--val-txt', default='', type=str,
@@ -184,10 +185,13 @@ def get_args_parser():
     parser.add_argument('--pos-weight', default='', type=str,
                     help='Optional comma-separated pos_weight for BCEWithLogitsLoss, length=C')
 
+    #additional save frequency
     parser.add_argument('--save-freq', type=int, default=1,
                     help='frequency of saving checkpoints (epochs)')
     parser.add_argument('--predict-only', action='store_true',
                     help='TXT inference mode: val-txt contains only image paths, output predictions to files')
+
+    #addtitional prediction parameters
     parser.add_argument('--pred-out', default='pred_vec.txt', type=str,
                     help='Output file: <img_path> <0,1,0,...>')
     parser.add_argument('--pred-label-out', default='pred_labels.txt', type=str,
@@ -387,11 +391,11 @@ def main(args):
                     model_ema, checkpoint['model_ema'])
             if 'scaler' in checkpoint:
                 loss_scaler.load_state_dict(checkpoint['scaler'])
+
+    #New code for prediciton
     if args.eval:
         if args.data_set == 'TXT' and getattr(args, "predict_only", False):
-            from util.engine import predict_txt_images  # 你项目里 engine 的导入方式按需调整
-            # 注意：你在 main.py 顶部是 from util import *，通常 build_dataset/evaluate 在 util 包里
-            # 如果 import 不通，就改成：from util.engine import predict_txt_images
+            from util.engine import predict_txt_images
             pred_info = predict_txt_images(
                 data_loader_val, model, device,
                 label_txt=args.label_txt,
@@ -405,7 +409,7 @@ def main(args):
                 print(f"[predict_only] thr={pred_info['thr']}, num_labels={pred_info['num_labels']}")
             return
 
-        # 否则还是走你原来的带标签验证评估
+        # prediction with tags
         test_stats = evaluate(data_loader_val, model, device)
         print(f"mAP: {test_stats['mAP']*100:.2f}% | micro-F1: {test_stats['micro_f1']*100:.2f}% (thr={test_stats['best_thr']:.2f})")
         return
