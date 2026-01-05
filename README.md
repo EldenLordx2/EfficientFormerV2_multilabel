@@ -12,6 +12,8 @@ This project is based on the **official implementation of EfficientFormer / Effi
 
 It is suitable for **content moderation, multi-attribute recognition, and industrial multi-label classification** tasks.
 
+In practical evaluations, the **Efficient-l** model trained with this framework achieved a **5%** improvement in mAP across all labels on a pornographic image multi-label classification dataset.
+For the binary classification task (normal vs. porn), the model reached over **90%** accuracy and **80%** recall.
 ---
 
 ## 📌 Model Origin
